@@ -117,6 +117,27 @@ def generate_done_chunk(chunk_id: str):
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def generate_non_stream_response(content: str):
+    """生成非流式响应的完整JSON"""
+    import json
+    return {
+        "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": MODEL_NAME,
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": content},
+            "finish_reason": "stop"
+        }],
+        "usage": {
+            "prompt_tokens": 0,
+            "completion_tokens": len(content),
+            "total_tokens": len(content)
+        }
+    }
+
+
 @app.get("/v1/models")
 async def list_models():
     """返回可用模型列表"""
@@ -133,6 +154,9 @@ async def list_models():
     }
 
 
+from fastapi.responses import JSONResponse
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(
     body: dict,
@@ -145,7 +169,14 @@ async def chat_completions(
     
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
     
-    # 将作文内容按字符或词语分割成多个chunk进行流式返回
+    # 获取 stream 参数，默认为 True（保持向后兼容）
+    stream = body.get("stream", True)
+    
+    if not stream:
+        # 非流式响应：直接返回完整的 JSON
+        return JSONResponse(content=generate_non_stream_response(ZuoWen_Content))
+    
+    # 流式响应：将作文内容按字符或词语分割成多个chunk进行流式返回
     # 使用词语分割，每10个字符为一个chunk，这样效果更好
     chunk_size = 10
     chunks = [ZuoWen_Content[i:i+chunk_size] for i in range(0, len(ZuoWen_Content), chunk_size)]
