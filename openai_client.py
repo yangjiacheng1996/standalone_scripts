@@ -26,6 +26,11 @@
 请开始你的命令行开发，将代码追加写入本文件下方，不要破坏开发计划。
 """
 
+'''
+# 依赖包
+requests
+'''
+
 import argparse
 import sys
 import json
