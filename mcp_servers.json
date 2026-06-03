@@ -1,0 +1,18 @@
+{
+    "mcpServers": {
+        "uuid32":{
+            "name": "uuid32",
+            "description": "",
+            "baseUrl": "http://127.0.0.1:8000/mcp",
+            "command": "",
+            "args": [],
+            "env": {},
+            "isActive": false,
+            "type": "streamableHttp",
+            "provider": "",
+            "providerUrl": "",
+            "logoUrl": "",
+            "tags": []
+        }
+    }
+}

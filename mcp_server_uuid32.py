@@ -83,8 +83,9 @@ def generate_uuid32() -> str:
 
 
 if __name__ == "__main__":
+    # mcp.run(transport="stdio")
     mcp.run(transport="streamable-http")
-
+    # mcp.run(transport="sse")
 """
 使用方法：
 python mcp_server_uuid32.py ，这样就启动了，占用8000端口。
