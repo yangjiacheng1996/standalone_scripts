@@ -302,7 +302,7 @@ def get_user_messages() -> list:
     """
     交互式获取用户消息
     """
-    print("\n请输入您的消息（输入空行结束输入，输入单独的 /q 退出）：\n", flush=True)
+    print("\n请输入您的消息（新增一行并输入 </enter> 结束输入，输入 /q 退出）：\n", flush=True)
     
     lines = []
     while True:
@@ -310,7 +310,7 @@ def get_user_messages() -> list:
             line = input()
             if line.strip() == '/q':
                 sys.exit(0)
-            if line == '':
+            if line.strip() == '</enter>':
                 break
             lines.append(line)
         except EOFError:
