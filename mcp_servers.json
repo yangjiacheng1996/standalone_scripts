@@ -7,7 +7,7 @@
             "command": "",
             "args": [],
             "env": {},
-            "isActive": false,
+            "isActive": true,
             "type": "streamableHttp",
             "provider": "",
             "providerUrl": "",
