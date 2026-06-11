@@ -510,27 +510,27 @@ class MCPClient:
     async def close(self) -> None:
         """关闭所有连接"""
         for name, conn in self.servers.items():
+            # 先关闭 session，它会负责清理 transport_context
             if conn.session:
                 try:
                     await conn.session.__aexit__(None, None, None)
                 except Exception as e:
-                    # 忽略常见的关闭错误，如 'TaskGroup' object has no attribute '_exceptions'
-                    if "'TaskGroup' object has no attribute '_exceptions'" not in str(e):
+                    error_str = str(e)
+                    # 忽略常见的关闭错误，这些错误在程序正常退出时是正常的
+                    if "'TaskGroup' object has no attribute '_exceptions'" not in error_str and \
+                       "Attempted to exit cancel scope" not in error_str and \
+                       "GeneratorExit" not in error_str and \
+                       "an error occurred during closing of asynchronous generator" not in error_str and \
+                       "RuntimeError" not in error_str:
                         print(f"关闭服务器 {name} 时出错: {e}", file=sys.stderr)
                 conn.session = None
                 conn.is_connected = False
             
-            # 关闭 transport context
-            if conn.transport_context:
-                try:
-                    await conn.transport_context.__aexit__(None, None, None)
-                except Exception:
-                    pass
-                conn.transport_context = None
-            
+            # 清理传输层引用
             conn.read_stream = None
             conn.write_stream = None
             conn.get_session_id = None
+            conn.transport_context = None
 
 
 # ========== 命令行接口 ==========

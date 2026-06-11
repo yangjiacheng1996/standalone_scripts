@@ -1,0 +1,33 @@
+{
+    "model":{
+        "url": "https://api.minimaxi.com/v1/",
+        "key": "sk-cp-BU05UImBQnnEhkRNeeqmN3sz17LehSOGUnhVD9YpGD3AtEvO-tEAP4cttzWo7kKTjVYCBhjrMoBE928fV6WtuPMzzdhcSZ5XF1OkQccTKarxuRsOileiMhI",
+        "model_name": "MiniMax-M2.7",
+        "context_length": 200000
+    },
+    "exposure":{
+        "port": 20001,
+        "key": "sk-expose-123456789",
+        "model_name": "agent1",
+        "context_length": 200000
+    },
+    "skills": {
+        "root_dir": "C:/workspace/github/skills/skills"
+    },
+    "mcpServers": {
+        "filesystem": {
+            "name": "filesystem",
+            "description": "本地文件系统访问 - 读取、写入、创建、删除文件和目录",
+            "baseUrl": "",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:/workspace/github/standalone_scripts"],
+            "env": {},
+            "isActive": true,
+            "type": "stdio",
+            "provider": "modelcontextprotocol",
+            "providerUrl": "https://github.com/modelcontextprotocol/servers",
+            "logoUrl": "",
+            "tags": ["filesystem", "file", "read", "write"]
+        }
+    }
+}
