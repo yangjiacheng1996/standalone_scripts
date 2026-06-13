@@ -53,6 +53,7 @@ import sys
 import time
 import uuid
 import argparse
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Optional, Any, Generator
 
@@ -278,9 +279,12 @@ class AgentClient:
         
         lines = ["\n\n<available_tools>"]
         
+        print(f"[DEBUG] get_mcp_tools_for_prompt: servers={list(tools.keys())}", flush=True)
         for server_name, server_tools in tools.items():
+            print(f"[DEBUG]   server={server_name}, tools_count={len(server_tools)}", flush=True)
             for tool in server_tools:
                 tool_name = tool['name']
+                print(f"[DEBUG]     tool_name={tool_name}", flush=True)
                 tool_desc = tool.get('description', '')
                 lines.append(f'<tool name="{tool_name}">')
                 lines.append(f"<description>{tool_desc}</description>")
@@ -478,16 +482,79 @@ class AgentClient:
             
             all_messages = [system_msg] + messages
             
-            if stream:
-                return StreamingResponse(
-                    self.call_llm(all_messages, stream=True),
-                    media_type="text/event-stream",
-                    headers={"Cache-Control": "no-cache"}
-                )
-            else:
-                return JSONResponse(
-                    content={"choices": [{"message": {"content": "non-stream not implemented"}}]}
-                )
+            # 处理工具调用循环
+            max_agent_loop = self.config.get("client_setting", {}).get("max_agent_loop", 10)
+            for _ in range(max_agent_loop):
+                # 调用LLM获取响应
+                response_text, has_tool_calls, tool_calls_data = self._call_llm_with_tools(all_messages)
+                
+                if not has_tool_calls:
+                    # 没有工具调用，返回普通文本响应
+                    print(f"[DEBUG] Returning response, stream={stream}, text_len={len(response_text) if response_text else 0}", flush=True)
+                    if stream:
+                        # 构建SSE格式的响应（使用同步生成器）
+                        def generate():
+                            # 使用 OpenAI 兼容的 SSE 格式
+                            data = {
+                                "choices": [{
+                                    "index": 0,
+                                    "delta": {"content": response_text},
+                                    "finish_reason": "stop"
+                                }]
+                            }
+                            content = f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                            print(f"[DEBUG] SSE content: {content[:200]}...", flush=True)
+                            yield content
+                            yield "data: [DONE]\n\n"
+                        return StreamingResponse(
+                            generate(),
+                            media_type="text/event-stream",
+                            headers={"Cache-Control": "no-cache"}
+                        )
+                    else:
+                        return JSONResponse(content={
+                            "choices": [{"message": {"content": response_text}}]
+                        })
+                
+                # 处理工具调用
+                for tool_call in tool_calls_data:
+                    tool_call_id = tool_call.get("id", "")
+                    tool_name = tool_call.get("name", tool_call.get("function", {}).get("name", ""))
+                    tool_args = tool_call.get("arguments", tool_call.get("function", {}).get("arguments", "{}"))
+                    
+                    print(f"[DEBUG] Processing tool_call: name={tool_name}, id={tool_call_id}", flush=True)
+                    print(f"[DEBUG] Raw args: {tool_args}", flush=True)
+                    
+                    # 解析参数
+                    if isinstance(tool_args, str):
+                        try:
+                            tool_args = json.loads(tool_args)
+                            print(f"[DEBUG] Parsed args: {tool_args}", flush=True)
+                        except JSONDecodeError:
+                            tool_args = {}
+                    
+                    # 添加助手消息（包含工具调用）
+                    all_messages.append({
+                        "role": "assistant",
+                        "tool_calls": [tool_call]
+                    })
+                    
+                    # 调用工具
+                    tool_result = await self._handle_tool_call(tool_name, tool_args)
+                    print(f"[DEBUG] Tool result: {tool_result[:200]}...", flush=True)
+                    
+                    # 添加工具结果消息
+                    all_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": tool_result
+                    })
+            
+            # 达到最大工具调用次数，返回错误
+            return JSONResponse(
+                status_code=500,
+                content={"error": "Maximum tool call iterations reached"}
+            )
         
         @app.get("/health")
         async def health():
@@ -500,6 +567,143 @@ class AgentClient:
             }
         
         return app
+    
+    def _call_llm_with_tools(self, messages: list) -> tuple[str, bool, list]:
+        """调用LLM并检查是否有工具调用
+        Returns: (response_text, has_tool_calls, tool_calls_data)
+        """
+        from openai_client import normalize_url, get_chat_completions_url
+        
+        normalized_url = normalize_url(self.model_url)
+        api_url = get_chat_completions_url(normalized_url)
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.model_key}"
+        }
+        
+        # 构建工具列表
+        tools = self._build_tools_list()
+        print(f"[DEBUG] Calling LLM with {len(tools)} tools", flush=True)
+        
+        payload = {
+            "model": self.model_name,
+            "messages": messages,
+            "stream": False,  # 非流式以便解析工具调用
+            "tools": tools
+        }
+        
+        try:
+            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
+            response.raise_for_status()
+            result = response.json()
+            
+            if "choices" not in result or len(result["choices"]) == 0:
+                return "", False, []
+            
+            choice = result["choices"][0]
+            message = choice.get("message", {})
+            
+            # 检查是否有工具调用
+            tool_calls = message.get("tool_calls", [])
+            if tool_calls:
+                print(f"[DEBUG] tool_calls detected: {len(tool_calls)} calls", flush=True)
+                for tc in tool_calls:
+                    print(f"[DEBUG]   tool_call: {tc}", flush=True)
+                return message.get("content", ""), True, tool_calls
+            
+            content = message.get("content", "")
+            print(f"[DEBUG] No tool_calls in response, content_len={len(content) if content else 0}", flush=True)
+            print(f"[DEBUG] Full response: {result}", flush=True)
+            return content, False, []
+            
+        except Exception as e:
+            print(f"[DEBUG] Exception in _call_llm_with_tools: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            return f"Error calling LLM: {str(e)}", False, []
+    
+    def _build_tools_list(self) -> list:
+        """构建OpenAI格式的工具列表"""
+        tools = []
+        
+        if self.mcp_client and self.mcp_ready:
+            for server_name, server_tools in self.mcp_client.list_tools().items():
+                for tool in server_tools:
+                    tool_name = tool['name']
+                    tool_desc = tool.get('description', '')
+                    input_schema = tool.get('inputSchema', {})
+                    
+                    # 构建OpenAI格式的工具定义
+                    openai_tool = {
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "description": tool_desc,
+                            "parameters": input_schema if isinstance(input_schema, dict) else {"type": "object", "properties": {}}
+                        }
+                    }
+                    tools.append(openai_tool)
+        
+        return tools
+    
+    async def _handle_tool_call(self, tool_name: str, tool_args: dict) -> str:
+        """处理工具调用"""
+        try:
+            print(f"[DEBUG] _handle_tool_call: tool_name={tool_name}", flush=True)
+            # 检查是否是MCP工具调用
+            if "." in tool_name:
+                parts = tool_name.split(".", 1)
+                server_name = parts[0]
+                mcp_tool_name = parts[1]
+                print(f"[DEBUG]   Parsed as server={server_name}, tool={mcp_tool_name}", flush=True)
+                
+                # 调用MCP工具
+                result = await self.call_mcp_tool(server_name, mcp_tool_name, tool_args)
+                # result 可能是 TextContent 对象列表，需要转换为可序列化格式
+                return self._serialize_tool_result(result)
+            else:
+                # 尝试从所有MCP服务器中查找工具
+                print(f"[DEBUG]   No '.' in tool_name, searching all servers...", flush=True)
+                if self.mcp_client and self.mcp_ready:
+                    for server_name, server_tools in self.mcp_client.list_tools().items():
+                        for tool in server_tools:
+                            if tool["name"] == tool_name:
+                                print(f"[DEBUG]   Found in server={server_name}", flush=True)
+                                result = await self.call_mcp_tool(server_name, tool_name, tool_args)
+                                return self._serialize_tool_result(result)
+                
+                print(f"[DEBUG]   Tool '{tool_name}' not found in any server", flush=True)
+                return json.dumps({"error": f"Tool '{tool_name}' not found"}, ensure_ascii=False)
+        except Exception as e:
+            print(f"[DEBUG] Exception in _handle_tool_call: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            return json.dumps({"error": str(e)}, ensure_ascii=False)
+    
+    def _serialize_tool_result(self, result: Any) -> str:
+        """序列化工具调用结果，处理 TextContent 等特殊类型"""
+        # 如果已经是字符串，直接返回
+        if isinstance(result, str):
+            return result
+        
+        try:
+            # 尝试直接 JSON 序列化
+            return json.dumps(result, ensure_ascii=False)
+        except TypeError:
+            # 如果失败，可能是 TextContent 对象列表
+            if isinstance(result, list):
+                items = []
+                for item in result:
+                    if hasattr(item, 'text'):
+                        items.append(item.text)
+                    elif hasattr(item, 'data'):
+                        items.append(item.data)
+                    else:
+                        items.append(str(item))
+                return json.dumps({"content": items}, ensure_ascii=False)
+            else:
+                return json.dumps({"content": str(result)}, ensure_ascii=False)
     
     async def run(self):
         """运行Agent客户端"""
