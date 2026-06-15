@@ -6,7 +6,7 @@
     },
     "model":{
         "url": "https://api.minimaxi.com/v1/",
-        "key": "sk-cp-bU05UImBQnnEhkRNeeqmN3sz17LehSOGUnhVD9YpGD3AtEvO-tEAP4cttzWo7kKTjVYCBhjrMoBE928fV6WtuPMzzdhcSZ5XF1OkQccTKarxuRsOileiMhI",
+        "key": "sk-fuck-it",
         "model_name": "MiniMax-M2.7",
         "context_length": 200000
     },
@@ -47,6 +47,18 @@
             "providerUrl": "https://github.com/modelcontextprotocol/servers",
             "logoUrl": "",
             "tags": ["thinking", "sequential"]
-        }
+        },
+        "searxng": {
+			"command": "npx",
+			"args": [
+				"-y",
+				"mcp-searxng"
+			],
+			"env": {
+				"SEARXNG_URL": "https://searxng.miyacloud.com"
+			},
+			"isActive": true,
+            "type": "stdio"
+		} 
     }
 }
