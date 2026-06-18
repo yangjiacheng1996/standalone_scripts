@@ -31,6 +31,19 @@ async def main():
             # 6. 调用工具
             result = await session.call_tool('my_tool', {'arg': 'value'})
 ```
+讲解：
+stdio_client 返回的是一个包含两个异步内存对象流（Memory Object Stream）的元组，代码中分别被解包赋值给了 stdio 和 write。
+具体来说：
+第一个元素 stdio（即 read_stream）：
+这是一个读取流。它用于接收来自 MCP 服务器的响应。stdio_client 会在后台启动一个异步任务，持续从服务器子进程的标准输出（stdout）中读取数据，将其按行分割并反序列化为 JSON-RPC 消息，然后放入这个流中供你的 ClientSession 消费。
+第二个元素 write（即 write_stream）：
+这是一个写入流。它用于向 MCP 服务器发送请求。当你的 ClientSession 需要发送消息（如 list_tools 或 call_tool）时，会将消息序列化后写入这个流。后台的另一个异步任务会从这个流中取出消息，并将其写入到服务器子进程的标准输入（stdin）中。
+总结来说，stdio_client 的核心作用是：
+在本地以子进程的方式启动 MCP 服务器。
+在客户端与服务器之间建立基于标准输入/输出（stdio）的通信管道。
+返回一对内存流（读流和写流），作为底层传输通道。
+随后，你将这对读写流传递给 ClientSession，ClientSession 会基于这两个流封装出更高级的 MCP 协议交互接口（如初始化、调用工具等），让你无需手动处理底层的 JSON-RPC 消息序列化与反序列化。
+
 
 Python SDK 支持三种传输方式：
 StdioClientTransport,

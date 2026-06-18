@@ -1,13 +1,13 @@
 {
     "client_setting":{
-            "max_agent_loop": 20,
+            "max_agent_loop": 50,
             "input_context_limit": 20000,
             "output_context_reserve": 20000
     },
     "model":{
-        "url": "https://api.minimaxi.com/v1/",
-        "key": "sk-fuck-it",
-        "model_name": "MiniMax-M2.7",
+        "url": "https://api.deepseek.com/v1",
+        "key": "sk-a011dc0f88b442138393e4517eb7118f",
+        "model_name": "deepseek-v4-pro",
         "context_length": 200000
     },
     "exposure":{
